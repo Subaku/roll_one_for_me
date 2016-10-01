@@ -18,8 +18,7 @@ punctuation).
 #TODO: I have a lot of generic 'except:' catches that should be
 #specified to error type.  I need to learn PRAW's error types.
 
-# import dice
-# raises dice.ParseException if dice.roll input string is bad.
+import dice
 import logging
 import os
 import pickle

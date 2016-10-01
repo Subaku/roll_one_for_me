@@ -5,20 +5,35 @@ module available in pypi.dice
 
 import random
 import operator
+import logging
 _operator_map = {"+" : operator.add,
                  "-" : operator.sub,
                  "*" : operator.mul,
                  "/" : operator.floordiv}
+_op_to_str_map = {operator.add : "+",
+                  operator.sub : "-",
+                  operator.mul : "*",
+                  operator.floordiv : "/",}
 _max_n = 100
 _max_k = 100
+_max_compound_roll_length = 20
+
+class RollParsingError(RuntimeError):
+    pass
+
+class RollLimitError(RuntimeError):
+    pass
+
 
 class SimpleRoll:
     '''At most {n=1}dK{[v^][L=K]}
     For instance:
     d5, 2d5, 4d5v2'''
     def __init__(self, input_string):
-        assert "d" in input_string, "SimpleRoll received non-roll string."
-        self.string = input_string.replace(" ", "")
+        if "d" not in input_string:
+            logging.error("RollParsingError")
+            raise RollParsingError("SimpleRoll received non-roll string.")
+        self.string = input_string.replace(" ", "").lower()
         count, tail = self.string.split("d")
         self.n = int(count) if count else 1
         self.k = (
@@ -30,12 +45,31 @@ class SimpleRoll:
             if not self._limiting()
             else int(tail.split(self._limiting())[1]))
         # sanity:
-        assert self.l <= self.n, "SimpleRoll to keep more dice than present."
-        assert self.n <= _max_n, "SimpleRoll exceeds maximum allowed dice."
-        assert self.k <= _max_k, "SimpleRoll exceeds maximum allowed die face."
+        self._sanity()
+        # These will be set in roll()
         self._last_roll = None
         self._value = None
         self.roll()
+
+    def _sanity(self):
+        if self.l <= 0:
+            logging.error("RollLimitError - kept <= 0")
+            raise RollLimitError("SimpleRoll to keep non-positive dice count.")
+        if self.n <= 0:
+            logging.error("RollLimitError - dice count <= 0")
+            raise RollLimitError("SimpleRoll to roll non-positive dice count.")
+        if self.k <= 1:
+            logging.error("RollLimitError - die face <= 1")
+            raise RollLimitError("SimpleRoll die face must be at least two.")
+        if self.l > self.n:
+            logging.error("RollLimitError - kept > count")
+            raise RollLimitError("SimpleRoll to keep more dice than present.")
+        if self.n > _max_n:
+            logging.error("RollLimitError - dice limit")
+            raise RollLimitError("SimpleRoll exceeds maximum allowed dice.")
+        if self.k > _max_k:
+            logging.error("RollLimitError - die face limit")
+            raise RollLimitError("SimpleRoll exceeds maximum allowed die face.")
 
     def _limiting(self):
         '''Returnes "^", "v", or "" when "^", "v", or neither are present in
@@ -51,16 +85,19 @@ the generating string, respectively.'''
 
     def __str__(self):
         if not self._limiting():
-            return "[{}] -> {}".format(
+            return "[{}: {}] -> {}".format(
+                self.string,
                 " ".join(str(v) for v in self._last_roll),
                 self._value)
         elif self._limiting() == "v":
-            return "[{} ({})] -> {}".format(
+            return "[{}: {} ({})] -> {}".format(
+                self.string,
                 " ".join(str(v) for v in self._last_roll[:self.l]),
                 " ".join(str(v) for v in self._last_roll[self.l:]),
                 self._value)
         else:
-            return "[({}) {}] -> {}".format(
+            return "[{}: ({}) {}] -> {}".format(
+                self.string,
                 " ".join(str(v) for v in self._last_roll[:-self.l]),
                 " ".join(str(v) for v in self._last_roll[-self.l:]),
                 self._value)
@@ -100,7 +137,7 @@ integer division.
 
     '''
     def __init__(self, input_string):
-        self.string = input_string.replace(" ", "")
+        self.string = input_string.replace(" ", "").lower()
         start = 0
         stop = 0
         self.items = []
@@ -116,11 +153,23 @@ integer division.
                 int(self.items[i])
                 if self.items[i].isnumeric()
                 else SimpleRoll(self.items[i]))
+        if len(self.items) // 2 > _max_compound_roll_length:
+            logging.error("RollLimitError - predicate length")
+            raise RollLimitError("Roll exceeds maximum predicate length.")
+        self.value = self.evaluate()
 
     def __repr__(self):
         return "<Roll: {}>".format(self.string)
 
     def __str__(self):
+        return "[({}){}] -> {}".format(
+            str(self.items[0]),
+            "".join(
+                " {} ({})".format(
+                    str(self.items[i]),
+                    str(self.items[i+1]))
+                for i in range(1, len(self.items), 2)),
+            self.value)
         return str(self.items)
 
     def evaluate(self):
@@ -128,11 +177,9 @@ integer division.
                   if not i%2
                   else _operator_map[self.items[i]]
                   for i in range(len(self.items))]
-        print(values)
         # mult/div pass
         i = 0
         while i < len(values)-2:
-            print(i, values)
             if values[i+1] in (operator.mul, operator.floordiv):
                 values[i] = values[i+1](values[i], values[i+2])
                 values = values[:i+1] + values[i+3:]
@@ -140,28 +187,9 @@ integer division.
                 i += 1
         # add/diff pass
         while len(values) > 1:
-            print(values)
             values[0] = values[1](values[0], values[2])
             values = values[:1] + values[3:]
         return values[0]
         
-def die_regex(text):
-    operators = "v^+*-/"
-    operators_map = {"+" : operator.add,
-                     "-" : operator.sub,
-                     "*" : operator.mul,
-                     "/" : operator.floordiv,
-                     "v" : lambda roll, n: keep_some(roll, n, 'low', False),
-                     "^" : lambda roll, n: leep_some(roll, n, 'high', False) }
-    operator_order = "".join(c for c in text if c in operators)
-    pass # Ignores priority.
-    dice_sets = re.findall("[0-9d]+", text)
-    dice_objs = [SimpleRoll(dice_sets[i]) for i in range(len(dice_sets))]
-    for d in dice_objs:
-        d.roll()
-    running = 0
-    for i in range(len(dice_sets)):
-        op = operator.add if i == 0 else operators_map[operator_order[i-1]]
-        print("running", running, "op", op, "next dice object:", str(dice_objs[i]))
-        running = op(running, int(dice_objs[i]))
-    return running
+def roll(input_string):
+    return Roll(input_string).evaluate()
