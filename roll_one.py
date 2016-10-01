@@ -1,26 +1,38 @@
 #!/usr/bin/python3
+'''Implementation for Reddit bot /u/roll_one_for_me.
 
-# Incomming messages will differentiate by type: Mentions are
-# praw.objects.Comment.  PM will me praw.objects.Message.  (And OP
-# items will be praw.objects.Submission)
+Bot usage: summon with user mention to /u/roll_one_for_me, or send a
+private message.
 
-# If a link is to a comment, get_submission resolves the OP with one
-# comment (the actual comment linked), even if it is greater than one
-# generation deep in comments.
+Default behavior: Summoning text / private message is parsed for
+tables and links to tables.  If called using a user-mention, the
+original post and top-level comments are also scanned.
 
-# To add: Look for tables that are actual tables.
-# Look for keyword ROLL in tables and scan for arbitrary depth
+Each table is parsed and rolled, and a reply is given.
 
-import praw
-import sys
+Tables must begin with a die notation starting a newline (ignoring
+punctuation).
+
+'''
+
+#TODO: I have a lot of generic 'except:' catches that should be
+#specified to error type.  I need to learn PRAW's error types.
+
+# import dice
+# raises dice.ParseException if dice.roll input string is bad.
+import logging
 import os
-import time
+import pickle
+import praw
 import random
 import re
 import string
-import pickle
+import sys
+import time
+
 from pprint import pprint  #for debugging / live testing
 
+# Make sure you're in the correct local directory.
 try:
     full_path = os.path.abspath(__file__)
     root_dir = os.path.dirname(full_path)
@@ -32,8 +44,8 @@ except:
 # Some constants #
 ##################
 # TODO: This should be a config file.
-_version="1.4.1"
-_last_updated="2016-04-18"
+_version="2.0.0"
+_last_updated="2016-09-21"
 
 _seen_max_len = 50
 _fetch_limit=25
@@ -47,121 +59,155 @@ _summons_regex = "u/roll_one_for_me"
 _mentions_attempts = 10
 _answer_attempts = 10
 
-_sleep_on_error = 10
+_sleep_on_error = 30
 _sleep_between_checks = 60
 
 _log_dir = "./logs"
 
 _trivial_passes_per_heartbeat = 30
 
-# Log print
-def lprint(l):
-    '''Prints, prepending time to message'''
-    print("{}: {}".format(time.strftime("%y %m (%b) %d (%a) %H:%M:%S"), l))
+_log_format_string = (
+    '%(asctime)s - %(levelname)-8s - %(name)-12s;'
+    ' Line %(lineno)-4d: %(message)s')
 
 
-def main(debug=False):
-    '''main(debug=False)
-    Logs into Reddit, looks for unanswered user mentions, and
-    generates and posts replies
-
-    '''
-    # Initialize
-    lprint("Begin main()")
-    seen_by_sentinel = []
-    # Core loop
-    while True:
-        try:
-            lprint("Signing into Reddit.")
-            r = sign_in()
-            trivial_passes_count = _trivial_passes_per_heartbeat - 1
-            while True:
-                was_mail = process_mail(r)
-                was_sub = scan_submissions(seen_by_sentinel, r)
-                trivial_passes_count += 1 if not was_mail and not was_sub else 0
-                if trivial_passes_count == _trivial_passes_per_heartbeat:
-                    lprint("Heartbeat.  {} passes without incident (or first pass).".format(_trivial_passes_per_heartbeat))
-                    trivial_passes_count = 0
-                time.sleep(_sleep_between_checks)
-        except Exception as e:
-            lprint("Top level.  Allowing to die for cron to revive.")
-            lprint("Error: {}".format(e))
-            raise(e)
-        # We would like to avoid large caching and delayed logging.
-        sys.stdout.flush()
+# As a function for live testing, as opposed to the one-line in main()
+def prepare_logger(this_logging_level=logging.INFO,
+                   other_logging_level=logging.ERROR,
+                   log_filename=None,
+                   file_mode='a'):
+    '''Clears the logging root and creates a new one to use, setting basic
+config.'''
+    
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    logging.basicConfig(level=other_logging_level,
+                        format=_log_format_string)
+    logging.getLogger('').setLevel(this_logging_level)
+    pass
+    # Add file logging
 
 
-# Returns true if anything happened
-def scan_submissions(seen, r):
-    '''This function groups the following:
-    * Get the newest submissions to /r/DnDBehindTheStreen
-    * Attempt to parse the item as containing tables
-    * If tables are detected, post a top-level comment requesting that
-      table rolls be performed there for readability
-    # * Update list of seen tables
-    # * Prune seen tables list if large.
+class Sentinel:
+    def __init__(self, reddit_handle, *seen_posts):
+        self.r = reddit_handle
+        self.seen = list(seen_posts)
+        self.organizing_posts_made = 0
+        
+    def __repr__(self):
+        return "<Sentinel>"
 
-    '''
-    try:
+    def sintinel_check(self):
+        '''This function groups the following:
+        * Get the newest submissions to /r/DnDBehindTheStreen
+        * Attempt to parse the item as containing tables
+        * If tables are detected, post a top-level comment requesting that
+        table rolls be performed there for readability
+        # * Update list of seen tables
+        # * Prune seen tables list if large.
+        
+        '''
+
+        logging.info("Scanning for new posts...")
         keep_it_tidy_reply = (
-            "It looks like this post has some tables I might be able to parse."
+            "It looks like this post has some tables!"
             "  To keep things tidy and not detract from actual discussion"
             " of these tables, please make your /u/roll_one_for_me requests"
             " as children to this comment." +
             BeepBoop() )
-        BtS = r.get_subreddit('DnDBehindTheScreen')
-        new_subs = BtS.get_new(limit=_fetch_limit)
+        try:
+            logging.debug("Fetching newest submissions to /r/DnDBehindTheScreen")
+            BtS = r.get_subreddit('DnDBehindTheScreen')
+            new_subs = BtS.get_new(limit=_fetch_limit)
+        except:
+            logging.critical("Fetching failed.")
+            return
         saw_something_said_something = False
         for item in new_subs:
-            TS = TableSource(item, "scan")
-            if TS.tables:
-                top_level_authors = [com.author for com in TS.source.comments]
-                # Check if I have already replied
-                if not TS.source in seen:
-                    seen.append(TS.source)
-                    if not r.user in top_level_authors:
-                        item.add_comment(keep_it_tidy_reply)
-                        lprint("Adding organizational comment to thread with title: {}".format(TS.source.title))
-                        saw_something_said_something = True
-
+            if item not in self.seen:
+                if has_tables(item):
+                    try:
+                        # Check if I have already replied
+                        top_level_authors = [com.author for com in item.comments]
+                        if not r.user in top_level_authors:
+                            item.add_comment(keep_it_tidy_reply)
+                            self.organizing_posts_made += 1
+                            logging.info(
+                                "Organizational comment made to thread:"
+                                " {}".format(TS.source.title))
+                            saw_something_said_something = True
+                    except:
+                        logging.error("Error in Sentinel checking.")
         # Prune list to max size
-        seen[:] = seen[-_seen_max_len:]
+        self.seen[:] = self.seen[-_seen_max_len:]
         return saw_something_said_something
-    except Exception as e:
-        lprint("Error during submissions scan: {}".format(e))
-        return False
 
 
-# returns True if anything processed
-def process_mail(r):
-    '''Processes notifications.  Returns True if any item was processed.'''
-    my_mail = list(r.get_unread(unset_has_mail=False))
-    to_process = [Request(x, r) for x in my_mail]
-    for item in to_process:
-        if item.is_summons() or item.is_PM():
-            reply_text = item.roll()
-            okay = True
-            if not reply_text:
-                reply_text = ("I'm sorry, but I can't find anything"
-                              " that I know how to parse.\n\n")
-                okay = False
-            reply_text += BeepBoop()
-            if len(reply_text) > 10000:
-                addition = ("\n\n**This reply would exceed 10000 characters"
-                            " and has been shortened.  Chaining replies is an"
-                            " intended future feature.")
-                clip_point = 10000 - len(addition) - len(BeepBoop()) - 200
-                reply_text = reply_text[:clip_point] + addition + BeepBoop()
-            item.reply(reply_text)
-            lprint("{} resolving request: {}.".format(
-                "Successfully" if okay else "Questionably", item))
-            if not okay:
-                item.log(_log_dir)
-        else:
-            lprint("Mail is not summons or error.  Logging item.")
-            item.log(_log_dir)
-        item.origin.mark_as_read()
-    return ( 0 < len(to_process))
+
+#class Bot(Sentinel, TableHandler, MailHandler):
+#    def __init__(self, reddit_handle):
+        # Sentinel.__init__(self, reddit_handle)
+        # TableHandler.__init__(self, reddit_handle)
+        # MailHandler.__init__(self, reddit_handle)
+        
+
+
+
+
+
+class MailHandler:
+    def process(self):
+        '''Processes notifications.  Returns True if any item was processed.'''
+        my_mail = list(self.r.get_unread(unset_has_mail=False))
+        requests_list = []
+        for notification in my_mail:
+            try:
+                requests_list.append(Request(notification, self.r))
+            except:
+                logging.warning("Mail could not be transformed to Request")
+                notification.mark_as_read()
+        return requests_list
+
+
+class TableHandler:
+    def __init__(self):
+        pass
+
+    def determine_commands(self, command_string):
+        pass
+
+
+    
+def main(debug=False, logging_level=logging.INFO):
+    '''Logs into Reddit, looks for unanswered user mentions, and
+    generates and posts replies
+
+    '''
+    # Initialize
+    prepare_logger(logging_level)
+    r = attempt_sign_in()
+    sentinel = Sentinel(r)
+    mail_handler = MailHandler(r)
+    table_handler = TableHandler(r)
+    trivial_passes_count = 0
+    logging.info("Enter core loop.")
+    while True:
+        try:
+            while True:
+                was_mail = mail_handler.process()
+                made_org_comm = sentinel.check()
+                if not was_mail and not was_sub:
+                    trivial_passes_count += 1
+                else:
+                    trivial_passes_count += 0
+                if trivial_passes_count == _trivial_passes_per_heartbeat:
+                    logging.info("{} passes without incident (or first pass).".format(_trivial_passes_per_heartbeat))
+                    trivial_passes_count = 0
+                time.sleep(_sleep_between_checks)
+        except Exception as e:
+            logging.critical("Top level error.  Crashing out.")
+            logging.shutdown("Error: {}".format(e))
+            raise(e)
 
 
 def BeepBoop():
@@ -176,6 +222,21 @@ def BeepBoop():
     return s
 
 
+def attempt_sign_in(attempts=5, sleep_on_failure=30):
+    for i in range(attempts):
+        try:
+            logging.info("Attempting to sign in...")
+            r = sign_in()
+            logging.info("Signed in.")
+            return r
+        except:
+            logging.info("Sign in failed.  Sleeping...")
+            time.sleep(sleep_on_failure)
+    logging.critical("Could not sign in after {} attempts.  Crashing out.")
+    logging.shutdown()
+    raise RuntimeError("Could not sign in.")
+
+
 def sign_in():
     '''Sign in to reddit using PRAW; returns Reddit handle'''
     r = praw.Reddit(
@@ -188,32 +249,32 @@ def sign_in():
     return r
 
 
-def test(mens=True):
-    '''test(return_mentions=True)
-    if return_mentions, returns tuple (reddit_handle, list_of_all_mail, list_of_mentions)
-    else, returns tuple (reddit_handle, list_of_all_mail, None)
-    '''
-    r = sign_in()
-    my_mail = list(r.get_unread(unset_has_mail=False))
-    if mens:
-        mentions = list(r.get_mentions())
-    else:
-        mentions = None
-    return r, my_mail, mentions
+# Fetches anything set as unread
+def fetch_mail(r, unset=False):
+    return list(r.get_unread(unset_has_mail=unset))
 
+# Not just the new ones
+def fetch_mentions(r):
+    return list(r.get_mentions())
 
-#TODO: Each class is poorly commented.
 
 ####################
 # classes
 '''Class definitions for the roll_one_for_me bot
 
-A Request fetches the submission and top-level comments of the appropraite thread.
+A Request fetches the submission and top-level comments of the
+appropraite thread.
+
 Each of these items become a TableSource.
+
 A TableSource is parsed for Tables.
+
 A Table contains many TableItems.
+
 When a Table is rolled, the appropraite TableItems are identified.
+
 These are then built into TableRoll objects for reporting.
+
 '''
 
 class Request:
@@ -230,9 +291,9 @@ class Request:
 
     def __str__(self):
         via = None
-        if type(self.origin) == praw.objects.Comment:
+        if isinstance(self.origin, praw.objects.Comment):
             via = "mention in {}".format(self.origin.submission.title)
-        elif type(self.origin) == praw.objects.Message:
+        elif isinstance(self.origin, praw.objects.Message):
             via = "private message"
         else:
             via = "a mystery!"
@@ -254,13 +315,35 @@ class Request:
             #print("Adding default set...", file=sys.stderr)
             self.get_default_sources()
 
-
-
     def _maybe_add_source(self, source, desc):
         '''Looks at PRAW submission and adds it if tables can be found.'''
         T = TableSource(source, desc)
         if T.has_tables():
             self.tables_sources.append(T)
+
+    def reply_to(self):
+        if self.is_summons() or self.is_PM():
+            logging.info("Generating reply...")
+            reply_text = self.roll()
+            without_issue = True
+            if not reply_text:
+                reply_text = ("I'm sorry, but I can't find anything"
+                              " that I know how to parse.\n\n")
+                logging.warning("No tables found.")
+                without_issue = False
+            reply_text += BeepBoop()
+            if len(reply_text) > 10000:
+                logging.debug("Had to clip message")
+                addition = ("\n\n**This reply would exceed 10000 characters"
+                            " and has been shortened.  Chaining replies is an"
+                            " intended future feature.")
+                clip_point = 10000 - len(addition) - len(BeepBoop()) - 200
+                reply_text = reply_text[:clip_point] + addition + BeepBoop()
+                without_issue = False
+            self.reply(reply_text)
+            logging.info("{} resolving request: {}.".format(
+                "Successfully" if okay else "Questionably", self))
+        self.origin.mark_as_read()
 
     def get_link_sources(self):
         links = re.findall("\[.*?\]\s*\(.*?\)", self.origin.body)
@@ -300,6 +383,7 @@ class Request:
 
     def roll(self):
         instance = [TS.roll() for TS in self.tables_sources]
+        # prune trivial outcomes
         instance = [x for x in instance if x]
         return "\n\n-----\n\n".join(instance)
 
@@ -623,3 +707,85 @@ if __name__=="__main__":
         main()
     elif 'y' in input("Run main? >> ").lower():
         main()
+
+
+import dice
+import matplotlib.pyplot as plt
+def dice_test(n=10000):
+    manual_cast = [max(random.randint(1, 6), random.randint(1, 6))
+                   for i in range(n)]
+    fancy_cast = [dice.roll("2d6^1")[0] for i in range(n)]
+    plt.ion()
+    plt.hist(manual_cast)
+    plt.title("manual")
+    plt.figure()
+    plt.hist(fancy_cast)
+    plt.title("fancy")
+    
+
+
+
+class TestA:
+    def __init__(self):
+        self._a = 6
+
+class TestB(TestA):
+    def __init__(self):
+        TestA.__init__(self)
+        self.__b = 9 # This one becomes mangled
+
+
+
+
+def identify_table_heading_positions(text):
+    linelist = text.split("\n")
+    line_inds = []
+    for i in range(len(linelist)):
+        line = linelist[i].strip()
+        print(" >>", line)
+        if not line:
+            print("Boring line.")
+            continue
+        left = line.strip(string.punctuation)
+        possible_dice = re.search(r"^([0-9d\-\*/\+v\^ ]+)", left)
+        if not possible_dice:
+            print("Nothing significant.")
+            continue
+        roll_string = possible_dice.group(1).strip(string.punctuation + " ")
+        if roll_string.isnumeric():
+            print("Just a number.")
+            continue
+        print("Possible dice roll: ", roll_string)
+        
+        print(dice.roll(roll_string))
+
+
+def test_text():
+    return '''This is a test text.
+**BOLD HEADING** followed by text.
+
+This is a description of my table.
+
+*2d4 - 1*  A table!
+
+1 one
+1 two
+1 three
+1 four 
+1 five
+1 six
+1 seven'''
+
+def make_hist_of(c, n=100):
+    rolls = [dice.roll(c) for i in range(n)]
+    counts = {v: rolls.count(v) for v in rolls}
+    plt.xlim((min(counts.keys()) - 1, max(counts.keys()) + 1))
+    plt.plot(sorted(counts), [counts[v] for v in sorted(counts)], ":o")
+    plt.show()
+    return
+
+    
+
+
+import operator
+

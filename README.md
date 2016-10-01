@@ -2,6 +2,18 @@
 This repository contains source code for Reddit bot /u/roll_one_for_me.
 Generates an instance of a random table in a Reddit submission.
 
+
+Usage A, default.  Roll 
+  /u/roll_one_for_me
+
+
+
+
+
+
+
+
+
 **How It Works:**
 
 * The bot looks for "headers", lines starting with "d<X>" (ignoring punctuation, and where <X> is some number>.  Looking at the lines following the header, the bot looks for <X> lines that begin with a digit.  These lines are taken to be the possible outcomes of the table.
@@ -49,9 +61,6 @@ Generates an instance of a random table in a Reddit submission.
 **Planned Features:**
 
 * Allow links to comments containing tables, not only Submission posts.
-* Parse multiple dice: resolve <n>d<k> for n > 1
-* Selective rolling: Specify which items you would like rolled, to ignore / include comment tables, et cetera
-* Multiple rolling: Allowing some or all items to be rolled multiply, either with or without repetition of outcome
 
 **Wishlist Features (Stuff I'll probably never do):**
 
