@@ -11,14 +11,17 @@ related subreddits, /r/DnDBehindTheScreen and the affiliated
 ROFM v2.0 brought with it a massive overhaul to its command lexicon.
 
 A user-mention of "/u/roll_one_for_me" will summon ROFM.  By default,
-ROFM will attempt to find and parse tables in the submission text, any
-top-level comments, and any links targetting Reddit itself.  Results
-are provided in a reply to the summoning comment.
+ROFM will attempt to find and parse tables in (1) the summoning text,
+(2) the submission text, (3) any top-level comments, and (4) any links
+targetting Reddit itself.  Results are provided in a reply to the
+summoning comment.
 
 Users may also send ROFM a private message.  Default behavior is the
-same, but of course there is submission text or comments.
+same, but naturally limited to the text of the message and provided
+links.
 
-**Links must be in the [Text](url) format to be noticed by ROFM.**
+**Links must be in the `[Text](url)` format to be noticed by ROFM.**
+  Raw URLs are not detected.
 
 Default behavior may be overridden using a command in the form of
 "[[COMMAND]]".  If an explicit command is given, *only* those commands
@@ -31,6 +34,8 @@ provided will be executed.  The following commands are available.
 * [[OP]]: Rolls any tables present in the submission text
 
 * [[Top]]: Rolls any tables present in top-level comments
+
+* [[Organize]]: Adds an orgizational comment for subsequent requests.
 
 * [[ANY OTHER STRING]]: Rolls any table whose header matches the
   provided string.
