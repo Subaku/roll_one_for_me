@@ -47,8 +47,7 @@ handle at self.r.'''
                 ' /u/roll_one_for_me.'
                 ' Written and maintained by /u/PurelyApplied'),
             site_name="roll_one")
-        # login info in praw.ini.  TODO: OAuth2
-        r.login(disable_warning=True)
+        r.refresh_access_information() # Assumes properly configured praw.ini
         self.r = r
 
 
