@@ -41,32 +41,36 @@ try:
 except:
     pass
 
-# It didn't feel right, putting this in a config file.
-_log_format_string = (
-    '%(asctime)s - %(levelname)-8s - %(name)-12s;'
-    ' Line %(lineno)-4d: %(message)s')
-
-
 # As a function for live testing, as opposed to the one-line in main()
 def prepare_logger(this_logging_level=logging.INFO,
                    other_logging_level=logging.ERROR,
                    log_filename=None,
-                   log_file_mode='a'):
+                   log_file_mode='a',
+                   format_string=None):
     '''Clears the logging root and creates a new one to use, setting basic
 config.'''
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
     logging.basicConfig(level=other_logging_level,
-                        format=_log_format_string)
+                        format=format_string)
     for my_module in ('rofm_bot', 'dice', 'tables', ''):
         logging.getLogger(my_module).setLevel(this_logging_level)
     if log_filename:
         file_handler = logging.FileHandler(log_filename)
         file_handler.setLevel(this_logging_level)
-        file_handler.setFormatter(logging.Formatter(_log_format_string))
+        file_handler.setFormatter(logging.Formatter(format_string))
         logging.getLogger().addHandler(file_handler)
 
     
+def config_test():
+    conf = configparser.RawConfigParser()
+    conf.read("config.ini")
+    try:
+        configurate(conf)
+    except:
+        pass
+    return conf
+
 def configurate(config):
     # Dice
     d_conf = config['dice']
@@ -81,7 +85,8 @@ def configurate(config):
         getattr(logging, io_conf['my_log_level']),
         getattr(logging, io_conf['external_log_level']),
         io_conf['log_filename'],
-        io_conf['log_file_mode'])
+        io_conf['log_file_mode'],
+        io_conf['log_format_string'])
 
 def main(config_file,
          this_logging_level=logging.INFO,
@@ -91,7 +96,7 @@ def main(config_file,
     generates and posts replies'''
     # Initialize
     prepare_logger(logging_level)
-    config = configparser.ConfigParser()
+    config = configparser.RawConfigParser()
     config.read(config_file)
     configurate(config)
     logging.info("Initializing rofm.")
