@@ -16,19 +16,20 @@ from tables import TableSource
 ## This page: Basic Reddit access and mail fetching
 class RedditBot:
     '''Base for Reddit bot components.  Handles login, provides reddit
-handle at self.r.'''
+handle at self.r.
+    '''
     def __init__(self, sign_in=True, **kwargs):
         self.r = None
         super(RedditBot, self).__init__()
         if sign_in:
-            self.attempt_sign_in(**kwargs)
+            self.sign_in(**kwargs)
 
     # TODO: I should swap these names.
-    def attempt_sign_in(self, sign_in_attempts=5, sleep_on_failure=30):
+    def sign_in(self, sign_in_attempts=5, sleep_on_failure=30):
         for i in range(sign_in_attempts):
             try:
                 logging.info("Attempting to sign in...")
-                r = self.sign_in()
+                r = self.attempt_sign_in()
                 logging.info("Signed in.")
                 return r
             except Exception as e:
@@ -39,15 +40,17 @@ handle at self.r.'''
         logging.critical("Could not sign in after {} attempts.  Crashing out.")
         raise RuntimeError("Could not sign in.")
 
-    def sign_in(self):
-        '''Sign in to reddit using PRAW; returns Reddit handle'''
+    def attempt_sign_in(self):
+        '''Attempt to sign into Reddit.  This function assumes a properly
+OAuth-configured praw.ini file.
+        '''
         r = praw.Reddit(
             user_agent=(
                 'Generate an outcome for random tables, under the name'
                 ' /u/roll_one_for_me.'
                 ' Written and maintained by /u/PurelyApplied'),
             site_name="roll_one")
-        r.refresh_access_information() # Assumes properly configured praw.ini
+        r.refresh_access_information()
         self.r = r
 
 
@@ -59,7 +62,7 @@ class MailHandler(RedditBot):
         return "<MailHandler>"
 
     # Fetches anything set as unread
-    def fetch_mail(self, unset=False):
+    def fetch_new_mail(self, unset=False):
         return list(self.r.get_unread(unset_has_mail=unset))
 
     # Fetches all inbox messages and mentions
@@ -70,7 +73,7 @@ class MailHandler(RedditBot):
     def fetch_mentions(self):
         return list(self.r.get_mentions())
 
-
+    
 
 ####################
 ## This page: Table and Request processing
@@ -140,6 +143,21 @@ class RequestProcessing(TableProcessing):
         else:
             self._build_queue_from_tags(explicit_command_tags, link_tags)
     
+
+
+
+
+
+    def process_request(self, request_ref):
+        request_text = request_ref.body
+        self.build_process_queue(self, request_text)
+        reply_str = ""
+        while self.process_queue:
+            
+
+
+
+
     def maybe_respond_to_item(self, item_ref):
         if isinstance(item_ref, praw.objects.Message):
             pass

@@ -5,10 +5,17 @@ from string import punctuation, whitespace
 from pprint import pprint
 import logging
 import re
+from enum import Enum
 
 # Slightly lower roll debugging for cleaner debug logs at standard
 # level.
 ROLL_DEBUG_LEVEL = logging.DEBUG-1
+
+# TODO: Allow columned "wide" tables:
+# | Outcome | T1  | T2 |
+# |:--      |:--  |:-- |
+# |  1      | O1a | O1b|
+# |  2      | O2a | O2b|
 
 class TableParsingError(RuntimeError):
     pass
@@ -66,16 +73,18 @@ class TableSource:
 class Table:
     '''Container for a single set of TableItem objects
     A single post will likely contain many Table objects'''
-    def __init__(self, text):
+    def __init__(self, text=''):
+        super(Table, self).__init__()
         self.text = text
         self.dice = None
         self.dice_range = None
-        self.header = ""
+        self.header = "NIL"
         self.outcomes = []
         self._last_roll_result = None
         self._last_roll_explicit = None
         
-        self._parse()
+        if text:
+            self._parse()
 
     def __repr__(self):
         return "<Table: {}>".format(self.header)
@@ -110,7 +119,8 @@ class Table:
         self.outcomes = [None] * self.dice_range[0]
         
         for line in lines:
-            # empty lines should be gone now.
+            if not line.strip(punctuation + whitespace):
+                continue
             line_regex = re.search(r"^([0-9]+)[-—– ]*([0-9]*)(.*)", line)
             start_str, stop_str, outcome = line_regex.groups()
             outcome = outcome.strip(punctuation + whitespace)
@@ -131,6 +141,33 @@ class Table:
         self._last_roll_explicit = str(self.dice)
         return self.outcomes[self._last_roll_result]
 
+
+class WideTable(Table):
+    def __init__(self, text):
+        super(WideTable, self).__init__(text)
+        # The roll column is essentially stripped in Table's parser
+        self.width = len(self.header.split("|")) - 1
+        self.tables = []
+        for i in range(self.width):
+            # But the roll column wouldn't have been removed from the
+            # header
+            head = self.header.split("|")[i+1]
+            outs = [None] + [out.split("|")[i] for out in self.outcomes[1:]]
+            t = Table()
+            t.header = head
+            t.outcomes = outs
+            t.dice = self.dice
+            t.dice_range = self.dice_range
+            t.roll()
+            self.tables.append(t)
+            
+
+    def __str__(self):
+        return "\n\n".join(str(t) for t in self.tables)
+    
+    def __repr__(self):
+        return "<WideTable>"
+    
 
 # Needs reimplementation
 class InlineTable(Table):
@@ -1449,4 +1486,17 @@ d8 This god likes to
 6. Participate, and manifests during battles/hunts/contests (in spirit or physically)
 7. Summon mortals to the god's plane/realm/hall/domain
 8. Remain distant, and only communicates through intermediaries (angels, etc)
+'''
+
+
+def wide():
+    return'''
+d6 Roll|Armor|Weaponry|Arena gimmick|Identifying feature|Personal tragedy
+:--|:--|:--|:--|:--|:--|:--
+1. | None | Two shortswords | Dances atop fallen foes | Maritime tattoo | Doomed love affair
+2. | Leather scraps | Shortsword and shield | Rude gestures | Slave tattoo | Death of a spouse
+3. | Bronze helm | Spear and shield | Insults spectators | Scars on face | Death of a child
+4. | Iron helm | Net and trident | Flower for lady spectator | Scars on back | Wrongfully accused
+5. | Leather baldric | Scimitar and whip | Prays after killing | Long hair | Desperate criminal
+6. | Chainmail | Heavy flail | Never speaks | Extravagant mustache | Prisoner of war
 '''
