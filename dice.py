@@ -6,14 +6,16 @@ module available in pypi.dice
 import random
 import operator
 import logging
-_operator_map = {"+" : operator.add,
+
+_OPERATOR_MAP = {"+" : operator.add,
                  "-" : operator.sub,
                  "*" : operator.mul,
                  "/" : operator.floordiv}
-_op_to_str_map = {operator.add : "+",
-                  operator.sub : "-",
-                  operator.mul : "*",
-                  operator.floordiv : "/",}
+# TODO(2016-10-09) This is unused.  Was that intentional..?
+_OP_TO_STR = {operator.add : "+",
+              operator.sub : "-",
+              operator.mul : "*",
+              operator.floordiv : "/",}
 class RollParsingError(RuntimeError):
     pass
 
@@ -226,7 +228,7 @@ predicates allowed.
     def evaluate(self):
         return do_basic_math([int(self.items[i])
                               if not i%2
-                              else _operator_map[self.items[i]]
+                              else _OPERATOR_MAP[self.items[i]]
                               for i in range(len(self.items))])
         
     def reroll(self):
@@ -238,7 +240,7 @@ predicates allowed.
     def get_range(self):
         ranges = [self.items[i].get_range()
                   if not i%2
-                  else _operator_map[self.items[i]]
+                  else _OPERATOR_MAP[self.items[i]]
                   for i in range(len(self.items))]
         low_range = [(ranges[i][0]
                       if not (i > 0 and ranges[i-1] == operator.floordiv)

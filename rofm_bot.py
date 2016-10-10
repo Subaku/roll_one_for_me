@@ -1,6 +1,11 @@
 '''Various component classes for /u/roll_one_for_me, as well as the
 primary RollOneForMe class.'''
 
+# Todo: set a maximum recursion depth.
+
+# Todo: a table header beginning with ! between the dice and the
+# header should not be included in the "defaults" but only accessible
+# by request or link.
 import logging
 import dice
 import time
@@ -118,18 +123,28 @@ class TableProcessing(RedditBot):
         return [t for t in table_sources if t]
 
 
-class RequestProcessing(TableProcessing):
-    commands = Enum('request',
-                    ['roll_dice',
-                     'roll_table',
-                     'roll_link',
-                     'provide_organizational'])
+COMMANDS = Enum('request',
+                [
+                    # These are general categoricals; requires no args
+                    'roll_op',
+                    'roll_top_level',
+                    'roll_link',
+                    'provide_organizational',
+                    # These will require specific arguments
+                    'roll_dice', # Takes die notation as arg
+                    'roll_table_with_tag', # Takes tag as arg
+                ])
+
+class RequestProcessing:
     def __init__(self):
         super(RequestProcessing, self).__init__()
-        self.process_queue = deque()
+        # Queue elements will be of the above enum, possibly paired
+        # with args:  (cmd, args)
+        self.queue = deque()
 
     def _default_queue(self):
-        pass
+        # Default queue: OP, top level
+        self.queue = deque([COMMANDS.roll_top_level, COMMANDS.roll_op])
 
     def _build_queue_from_tags(self, explicit_command_tags, link_tags):
         pass
