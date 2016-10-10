@@ -64,8 +64,8 @@ An example is given below:
 
 d4 This is an example.
 
-1.  This is a one.
-2-3.  This outcome has even-odds.
+1.  This is a one.    
+2-3.  This outcome has even-odds.    
 4.  You rolled a lucky four!  Roll the [special table]!
 
 
