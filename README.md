@@ -62,21 +62,23 @@ An example is given below:
 
 -----
 
-d4 This is an example.
-
-1.  This is a one.    
-2-3.  This outcome has even-odds.    
-4.  You rolled a lucky four!  Roll the [special table]!
-
-
-d6 ! This is a special table
-
-1.  One
-1.  Two
-1.  Three
-1.  2d6
-1.  Nine
-1.  Eighteen
+|d4 This is an example.
+|
+|1.  This is a one.
+|
+|2-3.  This outcome has even-odds.
+|
+|4.  You rolled a lucky four!  Roll the [special table]!
+|
+|
+|d6 ! This is a special table
+|
+|1.  One
+|1.  Two
+|1.  Three
+|1.  2d6
+|1.  Nine
+|1.  Eighteen
 
 -----
 
