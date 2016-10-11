@@ -29,12 +29,14 @@ handle at self.r.
         if sign_in:
             self.sign_in(**kwargs)
 
-    # TODO: I should swap these names.
     def sign_in(self, sign_in_attempts=5, sleep_on_failure=30):
+        '''Signs into Reddit, attempting $sign_in_attempts attempts before
+returning an error.
+        '''
         for i in range(sign_in_attempts):
             try:
                 logging.info("Attempting to sign in...")
-                r = self.attempt_sign_in()
+                r = self._attempt_sign_in()
                 logging.info("Signed in.")
                 return r
             except Exception as e:
@@ -45,7 +47,7 @@ handle at self.r.
         logging.critical("Could not sign in after {} attempts.  Crashing out.")
         raise RuntimeError("Could not sign in.")
 
-    def attempt_sign_in(self):
+    def _attempt_sign_in(self):
         '''Attempt to sign into Reddit.  This function assumes a properly
 OAuth-configured praw.ini file.
         '''
@@ -60,23 +62,37 @@ OAuth-configured praw.ini file.
 
 
 class MailHandler(RedditBot):
+    '''Mail and mention handling wrapper.'''
     def __init__(self):
         super(MailHandler, self).__init__()
 
     def __repr__(self):
         return "<MailHandler>"
 
-    # Fetches anything set as unread
-    def fetch_new_mail(self, unset=False):
-        return list(self.r.get_unread(unset_has_mail=unset))
+    def fetch_new_mail(self, unset=False, **kwargs) -> list:
+        '''Fetches any mail currently set as unread.  Does not unset
+notification by default.  kwargs passed to praw's get_unread'''
+        return list(self.r.get_unread(unset_has_mail=unset, **kwargs))
 
-    # Fetches all inbox messages and mentions
-    def fetch_inbox(self):
-        return list(self.r.get_inbox())
+    # TODO: does this unset notifications?
+    def fetch_inbox(self, **kwargs) -> list:
+        '''Fetches all mail in inbox.  kwargs passed to praw's get-inbox.
+        Does not unset notification, overwriting kwargs if necessary.
+        (Use fetch_new_mail instead.)
 
-    # Not just the new ones
-    def fetch_mentions(self):
-        return list(self.r.get_mentions())
+        '''
+        # Fetches all inbox messages and mentions
+        kwargs['unset_has_mail'] = False
+        return list(self.r.get_inbox(**kwargs))
+
+    def fetch_mentions(self, **kwargs) -> list:
+        '''Fetches user mentions. kwargs passed to praw's get_mentions.
+        Does not unset notification, overwriting kwargs if necessary.
+        (Use fetch_new_mail instead.)
+
+        '''
+        kwargs['unset_has_mail'] = False
+        return list(self.r.get_mentions(**kwargs))
 
     
 
@@ -126,6 +142,7 @@ class TableProcessing(RedditBot):
 COMMANDS = Enum('request',
                 [
                     # These are general categoricals; requires no args
+                    'roll_requesting',
                     'roll_op',
                     'roll_top_level',
                     'roll_link',
@@ -143,42 +160,29 @@ class RequestProcessing:
         self.queue = deque()
 
     def _default_queue(self):
-        # Default queue: OP, top level
-        self.queue = deque([COMMANDS.roll_top_level, COMMANDS.roll_op])
+        '''Produces the default repsonse queue: request, OP, top level'''
+        # TODO: add self?
+        self.queue = deque([COMMANDS.roll_top_level,
+                            COMMANDS.roll_op,
+                            COMMANDS.roll_requesting])
 
     def _build_queue_from_tags(self, explicit_command_tags, link_tags):
         pass
 
     def build_process_queue(self, item_text):
-        ## TODO: Will all summons/messages have .body?
         explicit_command_tags = re.findall(r"\[\[.*?\]\]", item_text)
         link_tags = re.findall(r"\[[^\[]*?\]\s*\(.*?\)", item_text)
         if not explicit_command_tags and not link_tags:
             self._default_queue()
         else:
             self._build_queue_from_tags(explicit_command_tags, link_tags)
-    
-
-
-
-
-
+            
     def process_request(self, request_ref):
         request_text = request_ref.body
         self.build_process_queue(self, request_text)
         reply_str = ""
         while self.process_queue:
             pass
-
-
-
-
-    def maybe_respond_to_item(self, item_ref):
-        if isinstance(item_ref, praw.objects.Message):
-            pass
-        # TODO!!: verify is summons.
-        if not r"/u/roll_one_for_me" in mention_ref.body:
-            logging.info("Item in mail queue not a summons or PM.")
 
     def respond_to_request(self, mention_ref):
         # Todo: there's a lot of potential optimization to be done
@@ -188,7 +192,7 @@ class RequestProcessing:
         commands = re.findall(r"\[\[(.+?)\]\]", mention_ref.body)
         logging.debug("Commands found: {}".format(commands))
         logging.info("Generating response to user-mention")
-        sources = self._get_table_sources(mention_ref)
+        sources = self.get_table_sources(mention_ref)
         logging.info("Table sources generated.  Generating response.")
         # respond, marks as read.
         # Possible sources: summoning comment, OP, top-level comments
@@ -325,6 +329,12 @@ class RollOneStats:
     def __repr__(self):
         return "<RollOneStats>"
 
+    def save_counts(self, cache_file):
+        pass
+
+    def load_counts(self, cache_file):
+        pass
+
     def attempt_to_load(self, filename):
         # Verify that existing stats are less than loading stats to
         # avoid overwriting anything significant.
@@ -342,12 +352,35 @@ class RollOneForMe(Sentinel, MailHandler, TableProcessing):
     def __repr__(self):
         return "<RollOneForMe>"
 
-    def save_counts(self, cache_file):
-        pass
-
-    def load_counts(self, cache_file):
-        pass
-
     def act(self):
         self.act_as_sentinel()
         self.answer_mail()
+
+        
+
+class Request(RequestProcessing):
+    '''A single summons or PM.  Associate praw_ref should already be
+verified to be a summons or PM request.
+    '''
+    def __init__(self, praw_ref):
+        super(Request, self).__init__()
+        # self.queue = dequeue()
+        self.ref = praw_ref
+        self.text = praw_ref.body
+        # Elements are tuple of Header, dice, text
+        self.items = list(args)
+        self.referred_tables = {}
+        
+    def __str__(self):
+        return "\n\n".join(
+            "    \n".join(
+                map(str, item))
+            for item in self.response_items)
+
+    def __repr__(self):
+        return "<Request>"
+
+    def respond(self):
+        # TODO: length pruning and possible chaining
+        self.ref.reply(str(self))
+        self.ref.mark_unread()
