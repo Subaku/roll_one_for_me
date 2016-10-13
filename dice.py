@@ -50,7 +50,7 @@ class SimpleRoll:
     d5, 2d5, 4d5v2.
 
     Class members 'max_n', 'max_k' limit permissible roll sizes.'''
-    
+
     max_n = 100
     max_k = 1000
 
@@ -115,7 +115,7 @@ class SimpleRoll:
 
     def __add__(self, other):
         return int(self) + other
-    
+
     def _sanity(self):
         if self.l <= 0:
             logging.error("RollLimitError - kept <= 0")
@@ -165,13 +165,13 @@ rolls'''
             raise RuntimeError("SimpleRoll l != n, but without v or ^")
         return self._value
 
-    
+
 class Roll:
     '''A roll consists of one or more SimpleRoll instances, separated by
 operators +-*/.  Mathematical priority of */ are respected, but
 parentheses are not permitted.  All operations are performed with
 left-to-right implicit associativity.  Division is performed as
-integer division.  
+integer division.
 
 Class member 'max_compound_roll_length' limits the numer of die
 predicates allowed.
@@ -213,7 +213,7 @@ predicates allowed.
 
     def __int__(self):
         return self.value
-    
+
     def _parse(self):
         logging.debug("Parsing Roll...")
         # Identify operator positions:
@@ -251,7 +251,7 @@ predicates allowed.
                                     if not i % 2
                                     else _OPERATOR_MAP[v]
                                     for i, v in enumerate(self.items)])
-    
+
     def roll(self):
         for item in self.items:
             if isinstance(item, SimpleRoll):
@@ -277,6 +277,6 @@ predicates allowed.
                       for i, v in ranges]
         return (do_basic_math(low_range), do_basic_math(high_range))
 
-    
+
 def roll(input_string):
     return int(Roll(input_string))
