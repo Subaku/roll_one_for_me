@@ -16,8 +16,13 @@ _OP_TO_STR = {operator.add : "+",
               operator.sub : "-",
               operator.mul : "*",
               operator.floordiv : "/",}
+# Regex for a single die roll
+REGEX=r"\d*\s*d\s*\d+(?:\s*[v^]\s*\d+)?"
+
+
 class RollParsingError(RuntimeError):
     pass
+
 
 class RollLimitError(RuntimeError):
     pass
@@ -54,9 +59,9 @@ class SimpleRoll:
         cls.max_n, cls.max_k = max_n, max_k
 
     def __init__(self, input_string):
+        logging.debug("Initialize SimpleRoll")
         self.n, self.k, self.l = None, None, None
         self._last_roll, self.value = None, None
-        
         logging.debug(
             "Generating SimpleRoll from input string: {}".format(input_string))
         if "d" not in input_string:
@@ -80,7 +85,37 @@ class SimpleRoll:
         self._value = None
         self.roll()
         logging.debug("Generated: {}".format(self))
-        
+
+    def __repr__(self):
+        return "<SimpleRoll: {}>".format(self.string)
+
+    def __str__(self):
+        if self.n == 1:
+            return "[d{}] -> {}".format(self.k, self._last_roll[0])
+        if not self._limiting():
+            return "[{}: {}] -> {}".format(
+                self.string,
+                " ".join(str(v) for v in self._last_roll),
+                self._value)
+        elif self._limiting() == "v":
+            return "[{}: {} ({})] -> {}".format(
+                self.string,
+                " ".join(str(v) for v in self._last_roll[:self.l]),
+                " ".join(str(v) for v in self._last_roll[self.l:]),
+                self._value)
+        else:
+            return "[{}: ({}) {}] -> {}".format(
+                self.string,
+                " ".join(str(v) for v in self._last_roll[:-self.l]),
+                " ".join(str(v) for v in self._last_roll[-self.l:]),
+                self._value)
+
+    def __int__(self):
+        return self._value
+
+    def __add__(self, other):
+        return int(self) + other
+    
     def _sanity(self):
         if self.l <= 0:
             logging.error("RollLimitError - kept <= 0")
@@ -111,37 +146,6 @@ the generating string, respectively.'''
         if "v" in self.string:
             return "v"
         return ""
-
-    def __repr__(self):
-        return "<SimpleRoll: {}>".format(self.string)
-
-    def __str__(self):
-        if self.n == 1:
-            return "[d{}] -> {}".format(self.k, self._last_roll[0])
-        if not self._limiting():
-            return "[{}: {}] -> {}".format(
-                self.string,
-                " ".join(str(v) for v in self._last_roll),
-                self._value)
-        elif self._limiting() == "v":
-            return "[{}: {} ({})] -> {}".format(
-                self.string,
-                " ".join(str(v) for v in self._last_roll[:self.l]),
-                " ".join(str(v) for v in self._last_roll[self.l:]),
-                self._value)
-        else:
-            return "[{}: ({}) {}] -> {}".format(
-                self.string,
-                " ".join(str(v) for v in self._last_roll[:-self.l]),
-                " ".join(str(v) for v in self._last_roll[-self.l:]),
-                self._value)
-
-
-    def __int__(self):
-        return self._value
-
-    def __add__(self, other):
-        return int(self) + other
 
     def get_range(self):
         '''Returns tuple (low, high) of the lowest and highest possible
@@ -187,26 +191,8 @@ predicates allowed.
         self.items = []
         self.value = None
         # Begin parsing
-        start = 0
-        stop = 0
-        while stop < len(self.string):
-            if self.string[stop] in "+-*/":
-                self.items.extend([self.string[start:stop],
-                                   self.string[stop]])
-                start = stop+1
-            stop += 1
-        self.items.append(self.string[start:])
-        for i in range(0, len(self.items), 2):
-            self.items[i] = (
-                int(self.items[i])
-                if self.items[i].isnumeric()
-                else SimpleRoll(self.items[i]))
-        if len(self.items) // 2 > Roll.max_compound_roll_length:
-            logging.error("RollLimitError - predicate length")
-            raise RollLimitError(
-                "Roll exceeds maximum predicate length ({}).".format(
-                    Roll.max_compound_roll_length))
-        self.value = self.evaluate()
+        self._parse()
+        self.evaluate()
         logging.debug("Generated: {}".format(self))
 
     def __repr__(self):
@@ -225,40 +211,72 @@ predicates allowed.
             self.value)
         return str(self.items)
 
+    def __int__(self):
+        return self.value
+    
+    def _parse(self):
+        logging.debug("Parsing Roll...")
+        # Identify operator positions:
+        ops = [(i, s) for i, s in enumerate(self.string) if s in '*/+-']
+        logging.debug("Operators: {}".format(ops))
+        if len(ops) // 2 >= Roll.max_compound_roll_length:
+            logging.error("RollLimitError - predicate length")
+            raise RollLimitError(
+                "Roll exceeds maximum predicate length ({}).".format(
+                    Roll.max_compound_roll_length))
+        logging.debug("Building items...")
+        # Kind of awkward, but too many boundary cases otherwise
+        ## Allocate space
+        self.items = [None] * (2 * len(ops) + 1)
+        ## Inject operators
+        self.items[1::2] = [o for _, o in ops]
+        logging.debug("Items: {}".format(self.items))
+        ## Update index ranging
+        starts = [0] + [i + 1 for i, _ in ops]
+        stops = [i for i, _ in ops] + [len(self.string)]
+        self.items[::2] = [self.string[start:stop]
+                            for start, stop in zip(starts, stops)]
+        logging.debug("Items: {}".format(self.items))
+        # Convert to SimpleRolls
+        logging.debug("Converting to odd indexed items to SimpleRoll...")
+        for i, v in enumerate(self.items):
+            # operators stay as operator strings
+            if not i % 2:
+                self.items[i] = (int(v)
+                                 if v.isnumeric()
+                                 else SimpleRoll(v))
+
     def evaluate(self):
-        return do_basic_math([int(self.items[i])
-                              if not i%2
-                              else _OPERATOR_MAP[self.items[i]]
-                              for i in range(len(self.items))])
-        
-    def reroll(self):
+        self.value = do_basic_math([int(v)
+                                    if not i % 2
+                                    else _OPERATOR_MAP[v]
+                                    for i, v in enumerate(self.items)])
+    
+    def roll(self):
         for item in self.items:
             if isinstance(item, SimpleRoll):
                 item.roll()
         return self.evaluate()
 
     def get_range(self):
-        ranges = [self.items[i].get_range()
-                  if not i%2
-                  else _OPERATOR_MAP[self.items[i]]
-                  for i in range(len(self.items))]
-        low_range = [(ranges[i][0]
+        ranges = [self.v.get_range()
+                  if not i % 2
+                  else _OPERATOR_MAP[v]
+                  for i, v in enumerate(self.items)]
+        low_range = [(v[0]
                       if not (i > 0 and ranges[i-1] == operator.floordiv)
-                      else ranges[i][1])
-                     if not i%2
-                     else ranges[i]
-                     for i in range(len(ranges))]
-        high_range = [(ranges[i][1]
+                      else v[1])
+                     if not i % 2
+                     else v
+                     for i, v in enumerate(ranges)]
+        high_range = [(v[1]
                        if not (i > 0 and ranges[i-1] == operator.floordiv)
-                       else ranges[i][0])
-                      if not i%2
-                      else ranges[i]
-                      for i in range(len(ranges))]
+                       else v[0])
+                      if not i % 2
+                      else v
+                      for i, v in ranges]
         return (do_basic_math(low_range), do_basic_math(high_range))
-                             
 
-        
-
-
+    
 def roll(input_string):
-    return Roll(input_string).evaluate()
+    return int(Roll(input_string))
