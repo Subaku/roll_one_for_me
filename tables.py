@@ -79,6 +79,7 @@ class Table:
         self.dice = None
         self.dice_range = None
         self.header = "NIL"
+        # TODO: I should really just dict-ify outcomes, not list
         self.outcomes = []
         self._last_roll_result = None
         self._last_roll_explicit = None

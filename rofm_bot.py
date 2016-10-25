@@ -16,7 +16,6 @@ from collections import deque
 import re
 from tables import TableSource
 
-
 ####################
 ## This page: Basic Reddit access and mail fetching
 class RedditBot:
@@ -74,7 +73,6 @@ class MailHandler(RedditBot):
 notification by default.  kwargs passed to praw's get_unread'''
         return list(self.r.get_unread(unset_has_mail=unset, **kwargs))
 
-    # TODO: does this unset notifications?
     def fetch_inbox(self, **kwargs) -> list:
         '''Fetches all mail in inbox.  kwargs passed to praw's get-inbox.
         Does not unset notification, overwriting kwargs if necessary.
@@ -94,15 +92,15 @@ notification by default.  kwargs passed to praw's get_unread'''
         kwargs['unset_has_mail'] = False
         return list(self.r.get_mentions(**kwargs))
 
-    
-
+
+
 ####################
 ## This page: Table and Request processing
 class TableProcessing(RedditBot):
     def __init__(self):
         super(TableProcessing, self).__init__()
 
-    def get_table_sources(self, root_ref,
+    def get_table_sources(self, request,
                           include_provided = True,
                           get_OP = True,
                           get_top_level = True,
@@ -176,7 +174,7 @@ class RequestProcessing:
             self._default_queue()
         else:
             self._build_queue_from_tags(explicit_command_tags, link_tags)
-            
+
     def process_request(self, request_ref):
         request_text = request_ref.body
         self.build_process_queue(self, request_text)
@@ -201,7 +199,7 @@ class RequestProcessing:
         # mention_ref.mark_as_read()
 
 
-
+
 ####################
 ## This page: Sentinel functionality
 class Sentinel(RedditBot):
@@ -305,9 +303,9 @@ thread to keep requests from cluttering top-level comments.
         # Prune list to max size
         self.seen = self.seen[-cache_limit:]
         return num_orgos_made
-        
-    
-
+
+
+
 ####################
 ## This page: Stats for bot and bot built from components above.
 class RollOneStats:
@@ -356,9 +354,9 @@ class RollOneForMe(Sentinel, MailHandler, TableProcessing):
         self.act_as_sentinel()
         self.answer_mail()
 
-        
-
-class Request(RequestProcessing):
+
+
+class Request:
     '''A single summons or PM.  Associate praw_ref should already be
 verified to be a summons or PM request.
     '''
@@ -366,21 +364,23 @@ verified to be a summons or PM request.
         super(Request, self).__init__()
         # self.queue = dequeue()
         self.ref = praw_ref
-        self.text = praw_ref.body
-        # Elements are tuple of Header, dice, text
-        self.items = list(args)
-        self.referred_tables = {}
-        
+        # Elements are tuple of Header, dice, text.  Will ultimately
+        # generate the response text
+        self.items = []
+
     def __str__(self):
-        return "\n\n".join(
-            "    \n".join(
-                map(str, item))
-            for item in self.response_items)
+        return self.get_response_text()
 
     def __repr__(self):
         return "<Request>"
 
-    def respond(self):
-        # TODO: length pruning and possible chaining
-        self.ref.reply(str(self))
-        self.ref.mark_unread()
+    def add_item(self, head, roll_str, outcome):
+        self.items.append((head, roll_str, outcome))
+
+    def get_response_text(self):
+        return "\n\n".join(
+            "    \n".join(
+                item)
+            for item in self.items)
+
+
