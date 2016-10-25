@@ -8,8 +8,9 @@ import re
 from enum import Enum
 
 # Slightly lower roll debugging for cleaner debug logs at standard
-# level.
-ROLL_DEBUG_LEVEL = logging.DEBUG-1
+# level.  It is considered bad form to make these custom logging
+# levels.
+ROLL_DEBUG_LEVEL = logging.DEBUG - 1
 
 # TODO: Allow columned "wide" tables:
 # | Outcome | T1  | T2 |
@@ -136,12 +137,19 @@ class Table:
     def roll(self):
         logging.log(ROLL_DEBUG_LEVEL,
                     "Rolling table: {}".format(self.header))
-        self._last_roll_result = self.dice.reroll()
+        self.dice.roll()
+        self._last_roll_result = int(self.dice)
+        logging.log(ROLL_DEBUG_LEVEL,
+                    " Roll value: {}".format(self._last_roll_result))
         self._last_roll_explicit = str(self.dice)
+        logging.log(ROLL_DEBUG_LEVEL,
+                    " Roll explicit: {}".format(self._last_roll_explicit))
         return self.outcomes[self._last_roll_result]
 
 
 class WideTable(Table):
+    '''Work in progress; not yet useful.  Should contain a list of
+tables?'''
     def __init__(self, text):
         super(WideTable, self).__init__(text)
         # The roll column is essentially stripped in Table's parser

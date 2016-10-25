@@ -11,11 +11,10 @@ _OPERATOR_MAP = {"+" : operator.add,
                  "-" : operator.sub,
                  "*" : operator.mul,
                  "/" : operator.floordiv}
+
 # TODO(2016-10-09) This is unused.  Was that intentional..?
-_OP_TO_STR = {operator.add : "+",
-              operator.sub : "-",
-              operator.mul : "*",
-              operator.floordiv : "/",}
+_OP_TO_STR = {op : ch for ch, op in _OPERATOR_MAP.items()}
+
 # Regex for a single die roll
 REGEX=r"\d*\s*d\s*\d+(?:\s*[v^]\s*\d+)?"
 
@@ -259,7 +258,7 @@ predicates allowed.
         return self.evaluate()
 
     def get_range(self):
-        ranges = [self.v.get_range()
+        ranges = [v.get_range()
                   if not i % 2
                   else _OPERATOR_MAP[v]
                   for i, v in enumerate(self.items)]
