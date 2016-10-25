@@ -277,6 +277,6 @@ predicates allowed.
                       for i, v in ranges]
         return (do_basic_math(low_range), do_basic_math(high_range))
 
-
+    
 def roll(input_string):
-    return int(Roll(input_string))
+    return Roll(input_string).evaluate()

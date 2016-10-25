@@ -20,6 +20,7 @@ ROLL_DEBUG_LEVEL = logging.DEBUG-1
 class TableParsingError(RuntimeError):
     pass
 
+
 class TableSource:
     def __init__(self, text):
         logging.debug("Building TableSource.")
@@ -79,11 +80,12 @@ class Table:
         self.dice = None
         self.dice_range = None
         self.header = "NIL"
-        # TODO: I should really just dict-ify outcomes, not list
+        # Should I be using a dictionary instead?  It would be
+        # cleaner, but would make tables that are numbered just with
+        # 1s harder to parse.
         self.outcomes = []
         self._last_roll_result = None
         self._last_roll_explicit = None
-        
         if text:
             self._parse()
 
@@ -118,7 +120,6 @@ class Table:
         # Pad the bottom with None, probably only one entry, for
         # index-access later.
         self.outcomes = [None] * self.dice_range[0]
-        
         for line in lines:
             if not line.strip(punctuation + whitespace):
                 continue
@@ -129,11 +130,8 @@ class Table:
             stop = int(stop_str) if stop_str else start
             weight = stop - start + 1
             self.outcomes.extend([outcome] * weight)
-        
-        #todo
         if len(self.outcomes) != self.dice_range[1] + 1:
             logging.warning("Table outcome mismatch expected range.")
-        
         
     def roll(self):
         logging.log(ROLL_DEBUG_LEVEL,
