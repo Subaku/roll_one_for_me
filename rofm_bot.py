@@ -14,7 +14,7 @@ import pickle
 from enum import Enum
 from collections import deque
 import re
-from tables import TableSource
+from dnd_tables import TableSource
 
 ####################
 ## This page: Basic Reddit access and mail fetching
