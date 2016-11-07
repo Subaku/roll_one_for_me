@@ -74,10 +74,9 @@ def config_test():
 def configurate(config):
     # Dice
     d_conf = config['dice']
-    dice.SimpleRoll.set_roll_limits(
+    dice.set_limits(
         int(d_conf['max_n']),
-        int(d_conf['max_k']))
-    dice.Roll.set_max_roll_length(
+        int(d_conf['max_k']),
         int(d_conf['max_compound_roll_length']))
     # IO
     io_conf = config['io']

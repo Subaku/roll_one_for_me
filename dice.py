@@ -11,11 +11,10 @@ _OPERATOR_MAP = {"+" : operator.add,
                  "-" : operator.sub,
                  "*" : operator.mul,
                  "/" : operator.floordiv}
+
 # TODO(2016-10-09) This is unused.  Was that intentional..?
-_OP_TO_STR = {operator.add : "+",
-              operator.sub : "-",
-              operator.mul : "*",
-              operator.floordiv : "/",}
+_OP_TO_STR = {op : ch for ch, op in _OPERATOR_MAP.items()}
+
 # Regex for a single die roll
 REGEX=r"\d*\s*d\s*\d+(?:\s*[v^]\s*\d+)?"
 
@@ -28,45 +27,39 @@ class RollLimitError(RuntimeError):
     pass
 
 
-def do_basic_math(values: "[int, operator, int, operator, ...]"):
-    # mult/div pass
-    i = 0
-    while i < len(values)-2:
-        if values[i+1] in (operator.mul, operator.floordiv):
-            values[i] = values[i+1](values[i], values[i+2])
-            values = values[:i+1] + values[i+3:]
-        else:
-            i += 1
-    # add/diff pass
-    while len(values) > 1:
-        values[0] = values[1](values[0], values[2])
-        values = values[:1] + values[3:]
-    return values[0]
+class BasicMathError(ValueError):
+    pass
 
 
 class SimpleRoll:
     '''At most {n=1}dK{[v^][L=K]}
     For instance:
     d5, 2d5, 4d5v2.
-
     Class members 'max_n', 'max_k' limit permissible roll sizes.'''
 
     max_n = 100
     max_k = 1000
 
     @classmethod
-    def set_roll_limits(cls, max_n=100, max_k=1000):
-        cls.max_n, cls.max_k = max_n, max_k
+    def set_roll_limits(cls, max_n=None, max_k=None):
+        if max_n:
+            cls.max_n = max_n
+        if max_k:
+            cls.max_k = max_k
 
     def __init__(self, input_string):
         logging.debug("Initialize SimpleRoll")
+        # Allocate
         self.n, self.k, self.l = None, None, None
-        self._last_roll, self.value = None, None
+        # These will be set below in roll()
+        self._last_roll, self._value = None, None
         logging.debug(
             "Generating SimpleRoll from input string: {}".format(input_string))
+        # Make sure it's a roll to begin with
         if "d" not in input_string:
             logging.error("RollParsingError")
             raise RollParsingError("SimpleRoll received non-roll string.")
+        # Purge whitespace, get numbers
         self.string = input_string.replace(" ", "").lower()
         count, tail = self.string.split("d")
         self.n = int(count) if count else 1
@@ -80,11 +73,10 @@ class SimpleRoll:
             else int(tail.split(self._limiting())[1]))
         # sanity:
         self._sanity()
-        # These will be set in roll()
-        self._last_roll = None
-        self._value = None
+        # TODO: this roll will probably end up being redundant, but I
+        # won't want to leave _last_roll and _value as None
         self.roll()
-        logging.debug("Generated: {}".format(self))
+        logging.debug("Roll generated: {}".format(self))
 
     def __repr__(self):
         return "<SimpleRoll: {}>".format(self.string)
@@ -112,9 +104,6 @@ class SimpleRoll:
 
     def __int__(self):
         return self._value
-
-    def __add__(self, other):
-        return int(self) + other
 
     def _sanity(self):
         if self.l <= 0:
@@ -193,7 +182,7 @@ predicates allowed.
         # Begin parsing
         self._parse()
         self.evaluate()
-        logging.debug("Generated: {}".format(self))
+        logging.debug("Simple roll generated: {}".format(self))
 
     def __repr__(self):
         return "<Roll: {}>".format(self.string)
@@ -247,19 +236,20 @@ predicates allowed.
                                  else SimpleRoll(v))
 
     def evaluate(self):
-        self.value = do_basic_math([int(v)
-                                    if not i % 2
-                                    else _OPERATOR_MAP[v]
-                                    for i, v in enumerate(self.items)])
+        self.value = self._do_basic_math([int(v)
+                                          if not i % 2
+                                          else _OPERATOR_MAP[v]
+                                          for i, v in enumerate(self.items)])
 
     def roll(self):
         for item in self.items:
             if isinstance(item, SimpleRoll):
                 item.roll()
-        return self.evaluate()
+        self.evaluate()
+        return int(self)
 
     def get_range(self):
-        ranges = [self.v.get_range()
+        ranges = [v.get_range()
                   if not i % 2
                   else _OPERATOR_MAP[v]
                   for i, v in enumerate(self.items)]
@@ -275,8 +265,34 @@ predicates allowed.
                       if not i % 2
                       else v
                       for i, v in ranges]
-        return (do_basic_math(low_range), do_basic_math(high_range))
+        return (self._do_basic_math(low_range), self._do_basic_math(high_range))
 
+    
 
+    def _do_basic_math(self, values: "[int, operator, int, operator, ...]"):
+        '''Performs basic math operators in a list of alternating ints and
+operators.  Respects priority of multiplication and division.'''
+        # We'll use a sanitized eval call for simplicity.  To address the
+        # possible security issue, we'll be explicit about incomming
+        # types.
+        if len(values) % 2 != 1:
+            raise BasicMathError("Malformed list in _do_basic_math")
+        if not all(isinstance(v, int) for v in values[::2]):
+            raise BasicMathError("Expected int in even indexed positions.")
+        if not all(op in _OP_TO_STR.keys() for op in values[1::2]):
+            raise BasicMathError("Expected operator in odd indexed positions.")
+        as_str = [str(v)
+                  if not i%2
+                  else _OP_TO_STR[v]
+                  for i, v in enumerate(values)]
+        total = eval("".join(as_str))
+        return total
+
+    
 def roll(input_string):
-    return int(Roll(input_string))
+    return Roll(input_string).roll()
+
+def set_limits(max_n=None, max_k=None, max_predicate=None):
+    SimpleRoll.set_roll_limits(max_n, max_k)
+    Roll.set_max_roll_length(max_predicate)
+
