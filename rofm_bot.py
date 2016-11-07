@@ -15,7 +15,68 @@ from enum import Enum
 from collections import deque
 import re
 from tables import TableSource
+import os
 
+####################
+## Request isn't a bot... maybe this belongs somewhere else.  It's own
+## file?
+
+class Request:
+    '''A single summons or PM.  Associate praw_ref should already be
+verified to be a summons or PM request.
+    '''
+    def __init__(self, praw_ref):
+        super(Request, self).__init__()
+        self.ref = praw_ref
+        self.text = praw_ref.body
+        # Elements are tuple of Header, dice, text.  Will ultimately
+        # generate the response text
+        self.response_items = []
+
+    def __str__(self):
+        return self.get_response_text()
+
+    def __repr__(self):
+        return "<Request>"
+
+    def add_item(self, head='', roll_str='', outcome=''):
+        self.response_items.append((head, roll_str, outcome))
+
+    def get_response_text(self):
+        return "\n\n".join(
+            "    \n".join(
+                item)
+            for item in self.response_items)
+
+
+    def get_log_str(self):
+        ret_str = ''
+        ret_str += "Time    :  {}\n".format(fdate() )
+        ret_str += "Author  :  {}\n".format(self.origin.author)
+        try:
+            ret_str += "Link    :  {}\n".format(self.origin.permalink)
+        except:
+            ret_str += "Link    :  Unavailable (PM?)\n"
+            ret_str += "Type    :  {}\n".format(type(self.origin))
+        try:
+            ret_str += (
+                "Body    : (below)\n[Begin body]\n{}\n[End body]\n".format(
+                    get_post_text(self.origin)))
+        except:
+            ret_str += "Body    : Could not resolve message body."
+        ret_str += "\n"
+        try:
+            f.write("Submission title : {}\n".format(
+                self.origin.submission.title))
+            f.write("Submission body  :"
+                    " (below)\n[Begin selftext]\n{}\n[End selftext]\n".format(
+                        self.origin.submission.selftext))
+        except:
+            f.write("Submission: Could not resolve submission.")
+
+
+
+
 ####################
 ## This page: Basic Reddit access and mail fetching
 class RedditBot:
@@ -39,6 +100,8 @@ returning an error.
                 logging.info("Signed in.")
                 return r
             except Exception as e:
+                #requests.exceptions.ConnectionError
+                #praw.objects.ClientException
                 print("Got type", type(e))
                 print(e)
                 logging.info("Sign in failed.  Sleeping...")
@@ -59,7 +122,7 @@ OAuth-configured praw.ini file.
         r.refresh_access_information()
         self.r = r
 
-
+
 class MailHandler(RedditBot):
     '''Mail and mention handling wrapper.'''
     def __init__(self):
@@ -96,6 +159,7 @@ notification by default.  kwargs passed to praw's get_unread'''
 
 ####################
 ## This page: Table and Request processing
+
 class TableProcessing(RedditBot):
     def __init__(self):
         super(TableProcessing, self).__init__()
@@ -150,7 +214,8 @@ COMMANDS = Enum('request',
                     'roll_table_with_tag', # Takes tag as arg
                 ])
 
-class RequestProcessing:
+
+class RequestProcessing(TableProcessing):
     def __init__(self):
         super(RequestProcessing, self).__init__()
         # Queue elements will be of the above enum, possibly paired
@@ -167,19 +232,19 @@ class RequestProcessing:
     def _build_queue_from_tags(self, explicit_command_tags, link_tags):
         pass
 
-    def build_process_queue(self, item_text):
-        explicit_command_tags = re.findall(r"\[\[.*?\]\]", item_text)
-        link_tags = re.findall(r"\[[^\[]*?\]\s*\(.*?\)", item_text)
+    def build_process_queue(self, request):
+        explicit_command_tags = re.findall(r"\[\[.*?\]\]", request.text)
+        link_tags = re.findall(r"\[[^\[]*?\]\s*\(.*?\)", request.text)
         if not explicit_command_tags and not link_tags:
             self._default_queue()
         else:
             self._build_queue_from_tags(explicit_command_tags, link_tags)
 
-    def process_request(self, request_ref):
-        request_text = request_ref.body
-        self.build_process_queue(self, request_text)
-        reply_str = ""
+    def process_request(self, request):
+        self.build_process_queue(self, request)
         while self.process_queue:
+            # process one command
+            # Append an item to request.response_items
             pass
 
     def respond_to_request(self, mention_ref):
@@ -199,7 +264,7 @@ class RequestProcessing:
         # mention_ref.mark_as_read()
 
 
-
+
 ####################
 ## This page: Sentinel functionality
 class Sentinel(RedditBot):
@@ -305,17 +370,20 @@ thread to keep requests from cluttering top-level comments.
         return num_orgos_made
 
 
-
+
 ####################
 ## This page: Stats for bot and bot built from components above.
 class RollOneStats:
     '''Stats for /u/roll_one_for_me, to be included in message footer.'''
-    def __init__(self):
+    def __init__(self, load_file=None):
         self.summons_answered = 0
         self.pms_replied = 0
         self.tables_rolled = 0
         self.dice_rolled = 0
-
+        self.sentinel_posts_made = 0
+        if load_file:
+            self.load_data(load_file)
+        
     def __str__(self):
         return ("Requests fulfilled: {}    \n"
                 "Tables rolled: {}    \n"
@@ -327,19 +395,42 @@ class RollOneStats:
     def __repr__(self):
         return "<RollOneStats>"
 
-    def save_counts(self, cache_file):
-        pass
+    def __eq__(self, other):
+        if not isinstance(other, RollOneStats):
+            raise TypeError("RollOneStats only compares to other RollOneStats")
+        # No entries are different
+        return not any(getattr(self, key) != getattr(other, key)
+                       for key in self.__dict__)
 
-    def load_counts(self, cache_file):
-        pass
+    def save_data(self, cache_file, tmp_file='./.tmp'):
+        # Write first to a temp file to preserve the old file until
+        # we're sure we have successfully written our data.  "Just in
+        # case"
+        with open(tmp_file, 'wb') as handle:
+            pickle.dump(self, handle)
+        # TODO(2016-11-02) : will this overwrite or raise an error?
+        shutil.move(tmp_file, cache_file)
+        
+    def load_data(self, cache_file, raise_on_failure=True):
+        if not os.path.isfile(cache_file):
+            logging.error(
+                "Cannot open stats file {!r}: file does not exist.".format(
+                    cache_file))
+            if raise_on_failure:
+                raise RuntimeError("Could not open stats file")
+            else:
+                return
+        with open(cache_file, 'wb') as handle:
+            old = pickle.load(handle)
+        self.__dict__.update(old.__dict__)
 
-    def attempt_to_load(self, filename):
-        # Verify that existing stats are less than loading stats to
-        # avoid overwriting anything significant.
-        pass
-
-
-class RollOneForMe(Sentinel, MailHandler, TableProcessing):
+    def copy(self):
+        copied = RollOneStats()
+        copied.__dict__.update(self.__dict__)
+        return copied
+        
+
+class RollOneForMe(Sentinel, RequestProcessing):
     '''/u/roll_one_for_me bot.'''
     def __init__(self, load_stats_filename=None):
         super(RollOneForMe, self).__init__()
@@ -353,34 +444,5 @@ class RollOneForMe(Sentinel, MailHandler, TableProcessing):
     def act(self):
         self.act_as_sentinel()
         self.answer_mail()
-
-
-
-class Request:
-    '''A single summons or PM.  Associate praw_ref should already be
-verified to be a summons or PM request.
-    '''
-    def __init__(self, praw_ref):
-        super(Request, self).__init__()
-        # self.queue = dequeue()
-        self.ref = praw_ref
-        # Elements are tuple of Header, dice, text.  Will ultimately
-        # generate the response text
-        self.items = []
-
-    def __str__(self):
-        return self.get_response_text()
-
-    def __repr__(self):
-        return "<Request>"
-
-    def add_item(self, head, roll_str, outcome):
-        self.items.append((head, roll_str, outcome))
-
-    def get_response_text(self):
-        return "\n\n".join(
-            "    \n".join(
-                item)
-            for item in self.items)
 
 

@@ -88,6 +88,7 @@ def configurate(config):
         io_conf['log_file_mode'],
         io_conf['log_format_string'])
 
+
 def main(config_file,
          this_logging_level=logging.INFO,
          other_logging_level=logging.ERROR,
@@ -104,11 +105,14 @@ def main(config_file,
     trivial_passes_count = 0
     logging.info("Enter core loop.")
     trivial_per_heartbeat = config['io']['n_trivial_passes_per_heartbeat']
-    try:
-        while True:
+    while True:
+        try:
             rofm.act()
-            
             trivial = rofm.end_of_pass()
+        except:
+            trivial = False
+            pass
+        finally:
             trivial_passes_count = (
                 0 if not trivial
                 else trivial_passes_count + 1)
@@ -118,55 +122,8 @@ def main(config_file,
                         _trivial_passes_per_heartbeat))
                 trivial_passes_count = 0
             time.sleep(int(config['sleep']['between_checks']))
-    except Exception as e:
-        logging.critical("Top level error.  Crashing out.")
-        logging.shutdown("Shutdown error: {}".format(e))
-        raise(e)
 
 ####################
-
-def log_item(item_ref):
-    filename = "{}/rofm-{}-{}.log".format(log_dir, self.origin.author,
-                                          self.origin.fullname)
-    with open(filename, 'w') as f:
-        f.write("Time    :  {}\n".format(fdate() ))
-        f.write("Author  :  {}\n".format(self.origin.author))
-        try:
-            f.write("Link    :  {}\n".format(self.origin.permalink))
-        except:
-            f.write("Link    :  Unavailable (PM?)\n")
-        f.write("Type    :  {}\n".format(type(self.origin)))
-        try:
-            f.write("Body    : (below)\n[Begin body]\n{}\n[End body]\n".format(
-                get_post_text(self.origin)))
-        except:
-            f.write("Body    : Could not resolve message body.")
-        f.write("\n")
-        try:
-            f.write("Submission title : {}\n".format(
-                self.origin.submission.title))
-            f.write("Submission body  :"
-                    " (below)\n[Begin selftext]\n{}\n[End selftext]\n".format(
-                        self.origin.submission.selftext))
-        except:
-            f.write("Submission: Could not resolve submission.")
-    filename = filename.rstrip("log") + "pickle"
-    with open(filename, 'wb') as f:
-        pickle.dump(self, f)
-
-    # This function is unused, but may be useful in future logging
-    def describe_source(self):
-        return "From [this]({}) post by user {}...".format(
-            self.source.permalink, self.source.author)
-
-
-# if __name__=="__main__":
-#     print("Current working directory:", os.getcwd() )
-#     if len(sys.argv) > 1:
-#         main()
-#     elif 'y' in input("Run main? >> ").lower():
-#         main()
-
 
 def configtest():
     config = configparser.ConfigParser()
