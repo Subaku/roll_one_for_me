@@ -7,74 +7,17 @@ primary RollOneForMe class.'''
 # header should not be included in the "defaults" but only accessible
 # by request or link.
 import logging
-import dice
 import time
 import praw
 import pickle
+import os
+import re
 from enum import Enum
 from collections import deque
-import re
+
+import dice # ??
 from dnd_tables import TableSource
-import os
-
-####################
-## Request isn't a bot... maybe this belongs somewhere else.  It's own
-## file?
-
-class Request:
-    '''A single summons or PM.  Associate praw_ref should already be
-verified to be a summons or PM request.
-    '''
-    def __init__(self, praw_ref):
-        super(Request, self).__init__()
-        self.ref = praw_ref
-        self.text = praw_ref.body
-        # Elements are tuple of Header, dice, text.  Will ultimately
-        # generate the response text
-        self.response_items = []
-
-    def __str__(self):
-        return self.get_response_text()
-
-    def __repr__(self):
-        return "<Request>"
-
-    def add_item(self, head='', roll_str='', outcome=''):
-        self.response_items.append((head, roll_str, outcome))
-
-    def get_response_text(self):
-        return "\n\n".join(
-            "    \n".join(
-                item)
-            for item in self.response_items)
-
-
-    def get_log_str(self):
-        ret_str = ''
-        ret_str += "Time    :  {}\n".format(fdate() )
-        ret_str += "Author  :  {}\n".format(self.origin.author)
-        try:
-            ret_str += "Link    :  {}\n".format(self.origin.permalink)
-        except:
-            ret_str += "Link    :  Unavailable (PM?)\n"
-            ret_str += "Type    :  {}\n".format(type(self.origin))
-        try:
-            ret_str += (
-                "Body    : (below)\n[Begin body]\n{}\n[End body]\n".format(
-                    get_post_text(self.origin)))
-        except:
-            ret_str += "Body    : Could not resolve message body."
-        ret_str += "\n"
-        try:
-            f.write("Submission title : {}\n".format(
-                self.origin.submission.title))
-            f.write("Submission body  :"
-                    " (below)\n[Begin selftext]\n{}\n[End selftext]\n".format(
-                        self.origin.submission.selftext))
-        except:
-            f.write("Submission: Could not resolve submission.")
-
-
+from rofm_classes import Request, RollOneStats
 
 
 ####################
@@ -123,7 +66,7 @@ OAuth-configured praw.ini file.
         self.r = r
 
 
-class MailHandler(RedditBot):
+class MailHandling(RedditBot):
     '''Mail and mention handling wrapper.'''
     def __init__(self):
         super(MailHandler, self).__init__()
@@ -200,6 +143,7 @@ class TableProcessing(RedditBot):
         logging.debug("Removing nil TableSources")
         return [t for t in table_sources if t]
 
+    
 
 COMMANDS = Enum('request',
                 [
@@ -213,6 +157,7 @@ COMMANDS = Enum('request',
                     'roll_dice', # Takes die notation as arg
                     'roll_table_with_tag', # Takes tag as arg
                 ])
+
 
 
 class RequestProcessing(TableProcessing):
@@ -264,179 +209,13 @@ class RequestProcessing(TableProcessing):
         # mention_ref.mark_as_read()
 
 
-
-####################
-## This page: Sentinel functionality
-class Sentinel(RedditBot):
-    '''Sentinel action for /u/roll_one_for_me.  Monitors
-/r/DnDBehindTheScreen for posts with tables, and adds orgizational
-thread to keep requests from cluttering top-level comments.
-    '''
-    ####################
-    ## Class members and methods
-    # These are class-members to allow more natural config-file setup
-    fetch_limit = 50
-    cache_limit = 100
-    fetch_failures_allowed = 5
-
-    @classmethod
-    def set_fetch_limit(cls, new_fetch_limit):
-        cls.fetch_limit = new_fetch_limit
-
-    @classmethod
-    def set_cache_limit(cls, new_cache_limit):
-        cls.cache_limit = new_cache_limit
-
-    @classmethod
-    def set_cache_limit(cls, new_fail_limit):
-        cls.fetch_failures_allowed = new_fail_limit
-
-    ####################
-    ## Instance methods
-    def __init__(self, *seen_posts):
-        super(Sentinel, self).__init__()
-        self.seen = list(seen_posts)
-        self.fetch_failure_count = 0
-
-    def __repr__(self):
-        return "<Sentinel>"
-
-    def fetch_new_subs(self):
-        try:
-            logging.debug("Fetching newest /r/DnDBehindTheScreen submissions")
-            BtS = self.r.get_subreddit('DnDBehindTheScreen')
-            new_submissions = BtS.get_new(limit=Sentinel.fetch_limit)
-            self.fetch_failure_count = 0
-            return new_submissions
-        except:
-            logging.error("Fetching new posts failed...")
-            self.fetch_failure_count += 1
-            if self.fetch_failure_count >= Sentinel.fetch_failures_allowed:
-                logging.critical("Allowed failures exceeded.  Raising error.")
-                raise RuntimeError(
-                    "Sentinel fetch failure limit ({}) reached.".format(
-                        Sentinel.fetch_failures_allowed))
-            else:
-                logging.error("Will try again next cycle.")
-                return None
-
-    def sentinel_comment(self, beep_boop=True):
-        '''Produce organizational comment text'''
-        reply_text = (
-            "It looks like this post has some tables!"
-            "  To keep things tidy and not detract from actual discussion"
-            " of these tables, please make your /u/roll_one_for_me requests"
-            " as children to this comment.")
-        if beep_boop:
-            reply_text += "\n\n" + self.beep_boop()
-        return reply_text
-
-    def beep_boop(self):
-        raise NotImplementedError(
-            "BeepBoop needs to be obfusated by RollOneforMe")
-
-    def act_as_sentinel(self):
-        '''This function groups the following:
-        * Get the newest submissions to /r/DnDBehindTheStreen
-        * Attempt to parse the item as containing tables
-        * If tables are detected, post a top-level comment requesting that
-        table rolls be performed there for readability
-        # * Update list of seen tables
-        # * Prune seen tables list if large.
-        '''
-
-        num_orgos_made = 0
-        new_submissions = self.fetch_new_subs()
-        for item in new_submissions:
-            if item not in self.seen:
-                logging.debug("Considering submission: {}".format(item.title))
-                if TableSource(item.selftext):
-                    try:
-                        # Verify I have not already replied, but
-                        # thread isn't in cache (like after reload)
-                        top_level_authors = [com.author
-                                             for com in item.comments]
-                        if self.r.user not in top_level_authors:
-                            #item.add_comment(self.sentinel_comment())
-                            print("Not commenting on it.")
-                            num_orgos_made += 1
-                            logging.info(
-                                "Organizational comment made to thread:"
-                                " {}".format(TS.source.title))
-                    except:
-                        logging.error("Error in Sentinel checking.")
-        # Prune list to max size
-        self.seen = self.seen[-cache_limit:]
-        return num_orgos_made
-
-
-
-####################
-## This page: Stats for bot and bot built from components above.
-class RollOneStats:
-    '''Stats for /u/roll_one_for_me, to be included in message footer.'''
-    def __init__(self, load_file=None):
-        self.summons_answered = 0
-        self.pms_replied = 0
-        self.tables_rolled = 0
-        self.dice_rolled = 0
-        self.sentinel_posts_made = 0
-        if load_file:
-            self.load_data(load_file)
-        
-    def __str__(self):
-        return ("Requests fulfilled: {}    \n"
-                "Tables rolled: {}    \n"
-                "Misc Dice Rolled: {}".format(
-                    self.response_count,
-                    self.tables_rolled_count,
-                    self.dice_rolled))
-
-    def __repr__(self):
-        return "<RollOneStats>"
-
-    def __eq__(self, other):
-        if not isinstance(other, RollOneStats):
-            raise TypeError("RollOneStats only compares to other RollOneStats")
-        # No entries are different
-        return not any(getattr(self, key) != getattr(other, key)
-                       for key in self.__dict__)
-
-    def save_data(self, cache_file, tmp_file='./.tmp'):
-        # Write first to a temp file to preserve the old file until
-        # we're sure we have successfully written our data.  "Just in
-        # case"
-        with open(tmp_file, 'wb') as handle:
-            pickle.dump(self, handle)
-        # TODO(2016-11-02) : will this overwrite or raise an error?
-        shutil.move(tmp_file, cache_file)
-        
-    def load_data(self, cache_file, raise_on_failure=True):
-        if not os.path.isfile(cache_file):
-            logging.error(
-                "Cannot open stats file {!r}: file does not exist.".format(
-                    cache_file))
-            if raise_on_failure:
-                raise RuntimeError("Could not open stats file")
-            else:
-                return
-        with open(cache_file, 'wb') as handle:
-            old = pickle.load(handle)
-        self.__dict__.update(old.__dict__)
-
-    def copy(self):
-        copied = RollOneStats()
-        copied.__dict__.update(self.__dict__)
-        return copied
         
 
-class RollOneForMe(Sentinel, RequestProcessing):
+class RollOneForMe(Sentinel, RequestProcessing, MailHandling):
     '''/u/roll_one_for_me bot.'''
     def __init__(self, load_stats_filename=None):
         super(RollOneForMe, self).__init__()
-        self.stats = RollOneStats()
-        if load_stats_filename:
-            self.stats.attempt_to_load(load_stats_filename)
+        self.stats = RollOneStats(load_stats_filename)
 
     def __repr__(self):
         return "<RollOneForMe>"
@@ -445,4 +224,9 @@ class RollOneForMe(Sentinel, RequestProcessing):
         self.act_as_sentinel()
         self.answer_mail()
 
-
+    def answer_mail(self):
+        new_mail = self.fetch_new_mail()
+        for notification in new_mail:
+            # Mark as read within this loop, upon reply.
+            pass
+        
