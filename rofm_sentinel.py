@@ -1,4 +1,4 @@
-from rofm_bot import RedditBot
+from reddit_bot import RedditBot
 
 ####################
 ## This page: Sentinel functionality
@@ -29,6 +29,7 @@ thread to keep requests from cluttering top-level comments.
     ####################
     ## Instance methods
     def __init__(self, *seen_posts):
+        print("Sentinel init")
         super(Sentinel, self).__init__()
         self.seen = list(seen_posts)
         self.fetch_failure_count = 0
