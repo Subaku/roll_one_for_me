@@ -61,7 +61,8 @@ class MailHandling(RedditBot):
     def fetch_new_mail(self, unset=False, **kwargs) -> list:
         '''Fetches any mail currently set as unread.  Does not unset
 notification by default.  kwargs passed to praw's get_unread'''
-        return list(self.r.get_unread(unset_has_mail=unset, **kwargs))
+        kwargs.update({'unset_has_mail' : unset})
+        return list(self.r.get_unread(**kwargs))
 
     def fetch_inbox(self, **kwargs) -> list:
         '''Fetches all mail in inbox.  kwargs passed to praw's get-inbox.

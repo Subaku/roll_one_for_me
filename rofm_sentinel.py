@@ -1,4 +1,5 @@
 from reddit_bot import RedditBot
+import logging
 
 ####################
 ## This page: Sentinel functionality
@@ -29,7 +30,6 @@ thread to keep requests from cluttering top-level comments.
     ####################
     ## Instance methods
     def __init__(self, *seen_posts):
-        print("Sentinel init")
         super(Sentinel, self).__init__()
         self.seen = list(seen_posts)
         self.fetch_failure_count = 0
@@ -41,7 +41,9 @@ thread to keep requests from cluttering top-level comments.
         try:
             logging.debug("Fetching newest /r/DnDBehindTheScreen submissions")
             BtS = self.r.get_subreddit('DnDBehindTheScreen')
-            new_submissions = BtS.get_new(limit=Sentinel.fetch_limit)
+            # TODO(2016-11-15): Get a "last fetched" timestamp instead
+            # of cachine the pointers.
+            new_submissions = list(BtS.get_new(limit=Sentinel.fetch_limit))
             self.fetch_failure_count = 0
             return new_submissions
         except:

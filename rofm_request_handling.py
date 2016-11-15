@@ -4,6 +4,8 @@ import praw
 
 from reddit_bot import RedditBot
 
+from collections import deque
+
 ####################
 ## This page: Table and Request processing
 
