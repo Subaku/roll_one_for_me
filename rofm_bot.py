@@ -6,22 +6,17 @@ primary RollOneForMe class.'''
 # Todo: a table header beginning with ! between the dice and the
 # header should not be included in the "defaults" but only accessible
 # by request or link.
-import logging
-import dice
-import time
-import praw
-import pickle
-from enum import Enum
-from collections import deque
-import re
+import dice # ??
 from dnd_tables import TableSource
 import os
 import shutil
+from rofm_classes import Request, RollOneStats
+from rofm_sentinel import Sentinel
+from reddit_bot import RedditBot, MailHandling
+from rofm_request_handling import RequestProcessing
 
-####################
-## Request isn't a bot... maybe this belongs somewhere else.  It's own
-## file?
 
+<<<<<<< HEAD
 class Request:
     '''A single summons or PM.  Associate praw_ref should already be
 verified to be a summons or PM request.
@@ -439,13 +434,16 @@ class RollOneStats:
         
 
 class RollOneForMe(Sentinel, RequestProcessing):
+=======
+class RollOneForMe(Sentinel, RequestProcessing, MailHandling):
+>>>>>>> 7f90505c7e89d6f6f78a3dbbbc309da003eed4ac
     '''/u/roll_one_for_me bot.'''
     def __init__(self, load_stats_filename=None):
         super(RollOneForMe, self).__init__()
-        self.stats = RollOneStats()
-        if load_stats_filename:
-            self.stats.attempt_to_load(load_stats_filename)
-
+        print("rofm make stats...")
+        self.stats = RollOneStats(load_stats_filename)
+        print("made")
+        
     def __repr__(self):
         return "<RollOneForMe>"
 
@@ -453,4 +451,9 @@ class RollOneForMe(Sentinel, RequestProcessing):
         self.act_as_sentinel()
         self.answer_mail()
 
-
+    def answer_mail(self):
+        new_mail = self.fetch_new_mail()
+        for notification in new_mail:
+            # Mark as read within this loop, upon reply.
+            pass
+        
