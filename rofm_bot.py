@@ -377,21 +377,23 @@ class RollOneStats:
     '''Stats for /u/roll_one_for_me, to be included in message footer.'''
     def __init__(self, load_file=None):
         self.summons_answered = 0
-        self.pms_replied = 0
+        self.private_messages_replied = 0
         self.tables_rolled = 0
         self.dice_rolled = 0
         self.sentinel_posts_made = 0
+        self.since = datetime.datetime.utcnow()
         if load_file:
             self.load_data(load_file)
         
     def __str__(self):
-        return ("Requests fulfilled: {}    \n"
-                "Tables rolled: {}    \n"
-                "Misc Dice Rolled: {}".format(
-                    self.response_count,
-                    self.tables_rolled_count,
-                    self.dice_rolled))
-
+        return ("Since {since}:    \n"
+                "{summons_answered:>3} summons answered and    \n"
+                "{private_messages_replied:>3} PMs replied.    \n"
+                "{tables_rolled:>3} tables rolled,    \n"
+                "{dice_rolled:>3} total dice rolled.    \n"
+                "{sentinel_posts_made:>3} organizing comments made.    \n"
+                .format(**self.__dict__))
+    
     def __repr__(self):
         return "<RollOneStats>"
 
