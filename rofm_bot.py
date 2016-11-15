@@ -16,6 +16,7 @@ from collections import deque
 import re
 from dnd_tables import TableSource
 import os
+import shutil
 
 ####################
 ## Request isn't a bot... maybe this belongs somewhere else.  It's own
@@ -375,15 +376,15 @@ thread to keep requests from cluttering top-level comments.
 ## This page: Stats for bot and bot built from components above.
 class RollOneStats:
     '''Stats for /u/roll_one_for_me, to be included in message footer.'''
-    def __init__(self, load_file=None):
+    def __init__(self, *load_args, **load_kwargs):
         self.summons_answered = 0
         self.private_messages_replied = 0
         self.tables_rolled = 0
         self.dice_rolled = 0
         self.sentinel_posts_made = 0
         self.since = datetime.datetime.utcnow()
-        if load_file:
-            self.load_data(load_file)
+        if load_args:
+            self.load_data(*load_args, **load_kwargs)
         
     def __str__(self):
         return ("Since {since}:    \n"
@@ -413,16 +414,21 @@ class RollOneStats:
         # TODO(2016-11-02) : will this overwrite or raise an error?
         shutil.move(tmp_file, cache_file)
         
-    def load_data(self, cache_file, raise_on_failure=True):
+    def load_data(self, cache_file,
+                  raise_on_failure=True, create_file_if_missing=False):
         if not os.path.isfile(cache_file):
             logging.error(
                 "Cannot open stats file {!r}: file does not exist.".format(
                     cache_file))
             if raise_on_failure:
                 raise RuntimeError("Could not open stats file")
+            elif create_file_if_missing:
+                logging.info("Creating cache file at {!r}".format(cache_file))
+                self.save_data(cache_file)
+                return
             else:
                 return
-        with open(cache_file, 'wb') as handle:
+        with open(cache_file, 'rb') as handle:
             old = pickle.load(handle)
         self.__dict__.update(old.__dict__)
 
